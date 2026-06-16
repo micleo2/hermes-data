@@ -24,19 +24,26 @@ here.
 
 ## Layout
 
+`main` branch:
+
 ```
-main branch                         data branch (orphan)
-  LICENSE          MIT                 results/
-  README.md        this file            <sha>.json   one per benchmarked commit
-  .gitignore
-  runner/
-    poll-and-bench.sh        the poller (entry point)
-    extract_synth_results.py synth stdout (JSON) -> result schema
-    hermes-perf.service      systemd user unit
-    hermes-perf.timer        systemd user timer (every 10 min)
-    synth-bench-simple/      benchmark assets -- YOU provide these:
-        index.android.bundle
-        synth_trace.json
+LICENSE          MIT
+README.md        this file
+.gitignore
+runner/
+  poll-and-bench.sh        the poller (entry point)
+  extract_synth_results.py synth stdout (JSON) -> result schema
+  setup-systemd.py         generates + enables the systemd user timer
+  synth-bench-simple/      benchmark assets (committed):
+      index.android.bundle
+      synth_trace.json
+```
+
+`data` branch (orphan):
+
+```
+results/
+  <sha>.json     one per benchmarked commit
 ```
 
 On the Pi these are two sibling worktrees under one parent, backed by one clone:
@@ -82,36 +89,18 @@ second machine just works -- already-published commits are skipped.
    (Simpler alternative: `git clone … ~/hermes-data/main` then
    `git -C ~/hermes-data/main worktree add ../data data` -- works the same, but
    `main/` then holds the `.git` object store and must not be deleted.)
-   If your layout differs, set `DATA_REPO_DIR` in `runner.env` (step 4).
+   The bench assets and scripts come with the `main` worktree; the defaults
+   (`facebook/hermes`, `static_h`, 5 reps) need no config. To override, drop a
+   `~/hermes-data/runner.env` with `KEY=value` lines (e.g. `REPS=10`).
 
-3. **Add the benchmark assets** (static inputs, kept on the Pi so the
-   environment stays identical across commits):
+3. **Install and enable the systemd timer** with the setup script (generates the
+   `.service` + `.timer`, reloads, and enables). `--linger` keeps it running
+   when nobody is logged in (headless Pi):
    ```bash
-   # ~/hermes-data/main/runner/synth-bench-simple/
-   #   index.android.bundle
-   #   synth_trace.json
+   python3 ~/hermes-data/main/runner/setup-systemd.py --linger
+   # custom cadence: python3 .../setup-systemd.py --interval-min 30 --linger
    ```
-
-4. **Configure** (optional) `~/hermes-data/runner.env`:
-   ```bash
-   SOURCE_REPO=facebook/hermes
-   BRANCH=static_h
-   REPS=5
-   # Override only if the data worktree isn't the default ~/hermes-data/data
-   # DATA_REPO_DIR=/home/pi/hermes-data/data
-   ```
-
-5. **Install and enable the systemd user units:**
-   ```bash
-   mkdir -p ~/.config/systemd/user
-   cp ~/hermes-data/main/runner/hermes-perf.service ~/.config/systemd/user/
-   cp ~/hermes-data/main/runner/hermes-perf.timer   ~/.config/systemd/user/
-   systemctl --user daemon-reload
-   systemctl --user enable --now hermes-perf.timer
-
-   # Keep user services running when nobody is logged in (headless Pi):
-   sudo loginctl enable-linger "$USER"
-   ```
+   Default poll interval is 15 minutes. Re-run any time to change it.
 
 ## Operating
 
