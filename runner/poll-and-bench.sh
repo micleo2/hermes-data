@@ -39,15 +39,16 @@ MAX_RUNS="${MAX_RUNS:-30}"
 # Benchmark repetitions (synth reports the median rep).
 REPS="${REPS:-5}"
 
-# The repo uses two branches:
-#   main  -- this script + bench assets (checked out at, e.g., ~/hermes-data)
-#   data  -- an orphan branch holding only results/<sha>.json
-# On the Pi the data branch is checked out as a git WORKTREE (one clone, two
-# dirs), so results land on the data branch automatically. RUNNER_DIR is this
-# script's location on main; DATA_REPO_DIR is the data worktree.
-#   git -C ~/hermes-data worktree add ~/hermes-data-results data
+# The repo uses two branches, checked out as sibling git WORKTREES under one
+# parent (one clone, two dirs), so results land on the data branch
+# automatically:
+#   ~/hermes-data/
+#     main/   -- this script + bench assets   (RUNNER_DIR is .../main/runner)
+#     data/   -- orphan branch, results/<sha>.json   (DATA_REPO_DIR)
+# DATA_REPO_DIR is derived as the data worktree next to main/; override via env
+# if your layout differs.
 RUNNER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DATA_REPO_DIR="${DATA_REPO_DIR:-$HOME/hermes-data-results}"
+DATA_REPO_DIR="${DATA_REPO_DIR:-$(dirname "$(dirname "$RUNNER_DIR")")/data}"
 RESULTS_SUBDIR="${RESULTS_SUBDIR:-results}"
 BENCH_DIR="${BENCH_DIR:-$RUNNER_DIR/synth-bench-simple}"
 EXTRACT="${EXTRACT:-$RUNNER_DIR/extract_synth_results.py}"

@@ -14,10 +14,11 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-# Assumes the data repo is cloned at ~/hermes-data. Adjust if you cloned it
-# elsewhere.
-ExecStart=%h/hermes-data/runner/poll-and-bench.sh
-# Optional: put SOURCE_REPO=, BRANCH=, REPS= etc. here.
+# Assumes the worktrees are at ~/hermes-data/{main,data}. Adjust if your layout
+# differs.
+ExecStart=%h/hermes-data/main/runner/poll-and-bench.sh
+# Optional: put SOURCE_REPO=, BRANCH=, REPS=, DATA_REPO_DIR= etc. here.
+# Kept at the parent (outside both worktrees) so it isn't an untracked file.
 EnvironmentFile=-%h/hermes-data/runner.env
 # Pin to performance governor / single core could go here if desired.
 Nice=-5

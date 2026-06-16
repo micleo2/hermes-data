@@ -15,29 +15,12 @@ On the Pi both branches are checked out at once via a single clone + a `git
 worktree`, so the runner reads scripts from `main` and writes results onto
 `data` without juggling two clones.
 
-## Why a "pull" model
+## How it works
 
-The Pi used to be a registered GitHub Actions runner and CI *pushed* the
-benchmark job to it. That is no longer viable. Now:
-
-- **`.github/workflows/perf-build-rpi.yml`** (in the Hermes source repo, *not*
-  here) only **builds** the release binaries (`synth`, `hermesc`) on GitHub's
-  fast ARM runners and uploads them as the `hermes-bin` artifact.
-- **The Pi polls** for finished builds, downloads the artifact, runs the
-  benchmark locally on bare metal, and commits a JSON result back to this repo.
-
-```
-GitHub push ──▶ perf-build-rpi.yml (ARM) ──▶ artifact: synth, hermesc
-                                                  │
-                          Pi systemd timer (every 10 min)
-                                                  │  gh run download
-                                                  │  gh api commits/<sha>  (timestamp)
-                                                  ▼
-                       hermesc compile ─▶ synth -reps 5 ─▶ extract JSON
-                                                  │
-                                                  ▼
-                       git commit + push ──▶ results/<sha>.json (data branch)
-```
+`.github/workflows/perf-build-rpi.yml` (in the Hermes source repo, *not* here)
+builds the release binaries on GitHub's ARM runners. The Pi polls for finished
+builds, downloads the artifact, benchmarks on bare metal, and commits the result
+here.
 
 ## Layout
 
@@ -56,11 +39,13 @@ main branch                         data branch (orphan)
         synth_trace.json
 ```
 
-On the Pi these map to two directories backed by one clone:
+On the Pi these are two sibling worktrees under one parent, backed by one clone:
 
 ```
-~/hermes-data/            main branch -- runner scripts + bench assets
-~/hermes-data-results/    worktree of the data branch -- results/<sha>.json
+~/hermes-data/
+  main/    worktree of the main branch -- runner scripts + bench assets
+  data/    worktree of the data branch -- results/<sha>.json
+  runner.env   (optional) config, kept outside both worktrees
 ```
 
 ## State / dedup
@@ -79,26 +64,30 @@ second machine just works -- already-published commits are skipped.
    gh auth login        # log in as a Hermes maintainer (needs artifact read)
    ```
 
-2. **Clone `main` and add the `data` worktree** (SSH so the headless Pi can push
-   without a prompt):
+2. **Set up `main/` and `data/` as sibling worktrees** under `~/hermes-data`
+   (SSH so the headless Pi can push without a prompt). The bare-repo variant
+   keeps the two worktrees symmetric (neither holds the object store):
    ```bash
-   # main branch: runner scripts
-   git clone git@github.com:<you>/hermes-data.git ~/hermes-data
-   # data branch: results, checked out as a sibling worktree (shares one .git)
-   git -C ~/hermes-data worktree add ~/hermes-data-results data
+   mkdir ~/hermes-data && cd ~/hermes-data
+   git clone --bare git@github.com:<you>/hermes-data.git .bare
+   echo "gitdir: ./.bare" > .git
+   git worktree add main main      # main branch: runner scripts
+   git worktree add data data      # data branch: results
 
-   # identity for the result commits
-   git -C ~/hermes-data config user.name  "hermes-perf-pi"
-   git -C ~/hermes-data config user.email "perf@localhost"
-   chmod +x ~/hermes-data/runner/poll-and-bench.sh
+   # identity for the result commits (or use your account's noreply email)
+   git -C ~/hermes-data/data config user.name  "hermes-perf-pi"
+   git -C ~/hermes-data/data config user.email "perf@localhost"
+   chmod +x ~/hermes-data/main/runner/poll-and-bench.sh
    ```
-   If you cloned/worktree'd to non-default paths, set `DATA_REPO_DIR` in
-   `runner.env` (step 4) to point at the data worktree.
+   (Simpler alternative: `git clone … ~/hermes-data/main` then
+   `git -C ~/hermes-data/main worktree add ../data data` -- works the same, but
+   `main/` then holds the `.git` object store and must not be deleted.)
+   If your layout differs, set `DATA_REPO_DIR` in `runner.env` (step 4).
 
 3. **Add the benchmark assets** (static inputs, kept on the Pi so the
    environment stays identical across commits):
    ```bash
-   # ~/hermes-data/runner/synth-bench-simple/
+   # ~/hermes-data/main/runner/synth-bench-simple/
    #   index.android.bundle
    #   synth_trace.json
    ```
@@ -108,15 +97,15 @@ second machine just works -- already-published commits are skipped.
    SOURCE_REPO=facebook/hermes
    BRANCH=static_h
    REPS=5
-   # Override only if the data worktree isn't at the default ~/hermes-data-results
-   # DATA_REPO_DIR=/home/pi/hermes-data-results
+   # Override only if the data worktree isn't the default ~/hermes-data/data
+   # DATA_REPO_DIR=/home/pi/hermes-data/data
    ```
 
 5. **Install and enable the systemd user units:**
    ```bash
    mkdir -p ~/.config/systemd/user
-   cp ~/hermes-data/runner/hermes-perf.service ~/.config/systemd/user/
-   cp ~/hermes-data/runner/hermes-perf.timer   ~/.config/systemd/user/
+   cp ~/hermes-data/main/runner/hermes-perf.service ~/.config/systemd/user/
+   cp ~/hermes-data/main/runner/hermes-perf.timer   ~/.config/systemd/user/
    systemctl --user daemon-reload
    systemctl --user enable --now hermes-perf.timer
 
