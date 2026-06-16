@@ -3,10 +3,17 @@
 Historical runtime-performance measurements for the Hermes JavaScript engine,
 one commit per measurement, plus the runner that produces them.
 
-This repo is **both** the benchmark runner (the code under `runner/`, which lives
-on a dedicated Raspberry Pi 5) **and** the data store (`results/<sha>.json`, one
-file per benchmarked commit). Keeping them together means the Pi has exactly one
-thing to clone and nothing to keep in sync.
+This repo has **two branches**:
+
+- **`main`** — the benchmark runner (the code under `runner/`), which lives on a
+  dedicated Raspberry Pi 5.
+- **`data`** — an orphan branch (no shared history with `main`) holding only
+  `results/<sha>.json`, one file per benchmarked commit. Keeping the
+  machine-generated measurement stream off `main` keeps the code history clean.
+
+On the Pi both branches are checked out at once via a single clone + a `git
+worktree`, so the runner reads scripts from `main` and writes results onto
+`data` without juggling two clones.
 
 ## Why a "pull" model
 
@@ -29,33 +36,39 @@ GitHub push ──▶ perf-build-rpi.yml (ARM) ──▶ artifact: synth, hermes
                        hermesc compile ─▶ synth -reps 5 ─▶ extract JSON
                                                   │
                                                   ▼
-                          git commit + push ──▶ results/<sha>.json (this repo)
+                       git commit + push ──▶ results/<sha>.json (data branch)
 ```
 
 ## Layout
 
 ```
-hermes-data/
-  LICENSE                       MIT
-  README.md                     this file
+main branch                         data branch (orphan)
+  LICENSE          MIT                 results/
+  README.md        this file            <sha>.json   one per benchmarked commit
+  .gitignore
   runner/
-    poll-and-bench.sh           the poller (entry point)
-    extract_synth_results.py    synth stdout (JSON) -> result schema
-    hermes-perf.service         systemd user unit
-    hermes-perf.timer           systemd user timer (every 10 min)
-    synth-bench-simple/         benchmark assets -- YOU provide these:
+    poll-and-bench.sh        the poller (entry point)
+    extract_synth_results.py synth stdout (JSON) -> result schema
+    hermes-perf.service      systemd user unit
+    hermes-perf.timer        systemd user timer (every 10 min)
+    synth-bench-simple/      benchmark assets -- YOU provide these:
         index.android.bundle
         synth_trace.json
-  results/
-    <sha>.json                  one per benchmarked commit
+```
+
+On the Pi these map to two directories backed by one clone:
+
+```
+~/hermes-data/            main branch -- runner scripts + bench assets
+~/hermes-data-results/    worktree of the data branch -- results/<sha>.json
 ```
 
 ## State / dedup
 
 There is **no local state**. A commit counts as "done" iff
-`results/<sha>.json` exists in this repo. The poller pulls the repo at the start
-of every run, so reimaging the Pi's SD card or running on a second machine just
-works -- already-published commits are skipped.
+`results/<sha>.json` exists on the `data` branch. The poller pulls the data
+worktree at the start of every run, so reimaging the Pi's SD card or running on a
+second machine just works -- already-published commits are skipped.
 
 ## One-time setup on the Pi
 
@@ -66,13 +79,21 @@ works -- already-published commits are skipped.
    gh auth login        # log in as a Hermes maintainer (needs artifact read)
    ```
 
-2. **Clone this repo** (SSH so the headless Pi can push without a prompt):
+2. **Clone `main` and add the `data` worktree** (SSH so the headless Pi can push
+   without a prompt):
    ```bash
+   # main branch: runner scripts
    git clone git@github.com:<you>/hermes-data.git ~/hermes-data
+   # data branch: results, checked out as a sibling worktree (shares one .git)
+   git -C ~/hermes-data worktree add ~/hermes-data-results data
+
+   # identity for the result commits
    git -C ~/hermes-data config user.name  "hermes-perf-pi"
    git -C ~/hermes-data config user.email "perf@localhost"
    chmod +x ~/hermes-data/runner/poll-and-bench.sh
    ```
+   If you cloned/worktree'd to non-default paths, set `DATA_REPO_DIR` in
+   `runner.env` (step 4) to point at the data worktree.
 
 3. **Add the benchmark assets** (static inputs, kept on the Pi so the
    environment stays identical across commits):
@@ -87,6 +108,8 @@ works -- already-published commits are skipped.
    SOURCE_REPO=facebook/hermes
    BRANCH=static_h
    REPS=5
+   # Override only if the data worktree isn't at the default ~/hermes-data-results
+   # DATA_REPO_DIR=/home/pi/hermes-data-results
    ```
 
 5. **Install and enable the systemd user units:**

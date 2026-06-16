@@ -39,12 +39,15 @@ MAX_RUNS="${MAX_RUNS:-30}"
 # Benchmark repetitions (synth reports the median rep).
 REPS="${REPS:-5}"
 
-# This script lives at <data-repo>/runner/poll-and-bench.sh: the runner dir is
-# its own location, the data repo is the parent, and results are committed into
-# <data-repo>/results/. The runner and the data store are the same repo, so
-# there is nothing extra to clone or keep in sync.
+# The repo uses two branches:
+#   main  -- this script + bench assets (checked out at, e.g., ~/hermes-data)
+#   data  -- an orphan branch holding only results/<sha>.json
+# On the Pi the data branch is checked out as a git WORKTREE (one clone, two
+# dirs), so results land on the data branch automatically. RUNNER_DIR is this
+# script's location on main; DATA_REPO_DIR is the data worktree.
+#   git -C ~/hermes-data worktree add ~/hermes-data-results data
 RUNNER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DATA_REPO_DIR="${DATA_REPO_DIR:-$(dirname "$RUNNER_DIR")}"
+DATA_REPO_DIR="${DATA_REPO_DIR:-$HOME/hermes-data-results}"
 RESULTS_SUBDIR="${RESULTS_SUBDIR:-results}"
 BENCH_DIR="${BENCH_DIR:-$RUNNER_DIR/synth-bench-simple}"
 EXTRACT="${EXTRACT:-$RUNNER_DIR/extract_synth_results.py}"
