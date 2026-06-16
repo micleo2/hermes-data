@@ -1,0 +1,15 @@
+# Python bytecode cache from the extractor.
+__pycache__/
+*.pyc
+
+# Compiled benchmark bytecode is a transient build artifact, produced fresh
+# from the bundle on every run. The source bundle/trace under
+# runner/synth-bench-simple/ are kept; their compiled output is not.
+*.hbc
+
+# Local runner overrides (SOURCE_REPO=, BRANCH=, REPS=, ...).
+runner.env
+
+# Editor / OS noise.
+*.swp
+.DS_Store

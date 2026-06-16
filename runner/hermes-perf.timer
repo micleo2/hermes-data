@@ -1,0 +1,21 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+#
+# Install as a *user* unit:  ~/.config/systemd/user/hermes-perf.timer
+# Enable with:  systemctl --user enable --now hermes-perf.timer
+
+[Unit]
+Description=Poll for new Hermes builds to benchmark every 10 minutes
+
+[Timer]
+# First run shortly after boot, then every 10 minutes after each run finishes.
+OnBootSec=2min
+OnUnitActiveSec=10min
+# If the Pi was off when a timer would have fired, run once on next boot.
+Persistent=true
+Unit=hermes-perf.service
+
+[Install]
+WantedBy=timers.target

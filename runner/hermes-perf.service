@@ -1,0 +1,26 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+#
+# Install as a *user* unit:  ~/.config/systemd/user/hermes-perf.service
+# (paired with hermes-perf.timer). A oneshot service; the timer will not
+# start a second instance while one is still running, so polls never overlap.
+
+[Unit]
+Description=Hermes perf: poll for new builds, benchmark, publish results
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Assumes the data repo is cloned at ~/hermes-data. Adjust if you cloned it
+# elsewhere.
+ExecStart=%h/hermes-data/runner/poll-and-bench.sh
+# Optional: put SOURCE_REPO=, BRANCH=, REPS= etc. here.
+EnvironmentFile=-%h/hermes-data/runner.env
+# Pin to performance governor / single core could go here if desired.
+Nice=-5
+
+[Install]
+WantedBy=default.target
