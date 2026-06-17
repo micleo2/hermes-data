@@ -221,23 +221,33 @@ def benchmark_run(args, rundir, run_id, sha, bench_dir, results_dir, data_dir):
         print(blob, end="")
         return True
 
-    (results_dir / f"{sha}.json").write_text(blob)
+    out_file = results_dir / f"{sha}.json"
+    out_file.write_text(blob)
+    rel = str(Path(args.results_subdir) / f"{sha}.json")
 
     log(f"  committing {sha} to data repo")
-    rel = str(Path(args.results_subdir) / f"{sha}.json")
     sh(["git", "-C", str(data_dir), "add", rel])
-    sh(
-        [
-            "git",
-            "-C",
-            str(data_dir),
-            "commit",
-            "--quiet",
-            "-m",
-            f"perf: {sha} @ {timestamp}",
-        ]
-    )
-    # Retry the push once against concurrent updates.
+    try:
+        sh(
+            [
+                "git",
+                "-C",
+                str(data_dir),
+                "commit",
+                "--quiet",
+                "-m",
+                f"perf: {sha} @ {timestamp}",
+            ]
+        )
+    except subprocess.CalledProcessError:
+        # Commit failed (e.g. git identity unset). Undo the write so the stray
+        # file can't fool dedup into thinking this commit is already published.
+        sh(["git", "-C", str(data_dir), "reset", "--quiet", "HEAD", rel], check=False)
+        out_file.unlink(missing_ok=True)
+        raise
+
+    # Retry the push once against concurrent updates. If it still fails, the
+    # commit stays local and the next run's start-of-run push publishes it.
     if sh(["git", "-C", str(data_dir), "push", "--quiet"], check=False).returncode:
         log("  push rejected, rebasing and retrying")
         sh(["git", "-C", str(data_dir), "pull", "--rebase", "--quiet"])
@@ -265,9 +275,29 @@ def main():
     results_dir.mkdir(parents=True, exist_ok=True)
     if args.dry_run:
         log("DRY RUN: results will be printed, not written/committed/pushed")
+    else:
+        # Publish any results committed but not pushed on a prior run.
+        sh(["git", "-C", str(data_dir), "push", "--quiet"], check=False)
 
     def have_result(sha):
-        return (results_dir / f"{sha}.json").exists()
+        # "Done" means committed on the data branch -- checked against the git
+        # HEAD tree, not the filesystem, so a result whose commit/push failed
+        # last time is retried rather than skipped.
+        return (
+            sh(
+                [
+                    "git",
+                    "-C",
+                    str(data_dir),
+                    "cat-file",
+                    "-e",
+                    f"HEAD:{args.results_subdir}/{sha}.json",
+                ],
+                check=False,
+                capture=True,
+            ).returncode
+            == 0
+        )
 
     log(
         f"Listing successful '{args.workflow}' runs on '{args.branch}' "
