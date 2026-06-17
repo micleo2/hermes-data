@@ -149,7 +149,16 @@ def list_runs(args):
 
 def benchmark_run(args, rundir, run_id, sha, bench_dir, results_dir, data_dir):
     """Benchmark one run into rundir. Returns True if a result was committed."""
-    log(f"Downloading artifact '{args.artifact}' from run {run_id} ({sha})")
+    # Commit metadata: title for human-readable logs, timestamp for the record.
+    commit = json.loads(
+        sh(["gh", "api", f"repos/{args.repo}/commits/{sha}"], capture=True).stdout
+    )["commit"]
+    title = (commit["message"].splitlines() or [""])[0]
+    timestamp = commit["committer"]["date"]
+
+    log(
+        f"Downloading artifact '{args.artifact}' from run {run_id} ({sha}) -- \"{title}\""
+    )
     dl = sh(
         [
             "gh",
@@ -169,18 +178,6 @@ def benchmark_run(args, rundir, run_id, sha, bench_dir, results_dir, data_dir):
     if dl.returncode != 0:
         log("  artifact unavailable (expired?), skipping")
         return False
-
-    # headSha is the built commit; fetch its commit timestamp for the history.
-    timestamp = sh(
-        [
-            "gh",
-            "api",
-            f"repos/{args.repo}/commits/{sha}",
-            "--jq",
-            ".commit.committer.date",
-        ],
-        capture=True,
-    ).stdout.strip()
 
     synth = rundir / "synth"
     hermesc = rundir / "hermesc"
