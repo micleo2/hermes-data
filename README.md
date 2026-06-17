@@ -114,6 +114,21 @@ on a second machine just works -- already-published commits are skipped.
    Default poll interval is 15 minutes. Re-run any time to change the interval
    or the script flags.
 
+## Testing without systemd
+
+Run the script by hand. `--dry-run` behaves exactly like a normal run, except it
+**prints** each result JSON to stdout instead of writing/committing/pushing it --
+so it makes no changes to the `data` branch. `--max-runs 1` limits it to the
+newest build:
+
+```bash
+python3 ~/hermes-data/main/runner/scrape-bench-publish.py \
+  ~/hermes-data/simple-rn-app ~/hermes-data/data \
+  --dry-run --max-runs 1 --reps 1
+```
+
+Drop `--dry-run` for a real run that publishes the result.
+
 ## Operating
 
 ```bash

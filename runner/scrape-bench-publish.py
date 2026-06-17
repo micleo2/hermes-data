@@ -109,6 +109,12 @@ def parse_args():
         default="results",
         help="results subdir within the data worktree (default: results)",
     )
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="behave exactly like a normal run, except instead of "
+        "writing/committing/pushing each result, print it to stdout",
+    )
     return p.parse_args()
 
 
@@ -213,9 +219,14 @@ def benchmark_run(args, rundir, run_id, sha, bench_dir, results_dir, data_dir):
 
     log("  extracting results")
     result = extract(raw_path.read_text(), sha, timestamp)
-    (results_dir / f"{sha}.json").write_text(
-        json.dumps(result, indent=2, sort_keys=True) + "\n"
-    )
+    blob = json.dumps(result, indent=2, sort_keys=True) + "\n"
+
+    if args.dry_run:
+        log(f"  DRY RUN: would publish {sha}; result follows:")
+        print(blob, end="")
+        return True
+
+    (results_dir / f"{sha}.json").write_text(blob)
 
     log(f"  committing {sha} to data repo")
     rel = str(Path(args.results_subdir) / f"{sha}.json")
@@ -257,6 +268,8 @@ def main():
     log(f"Updating data repo at {data_dir}")
     sh(["git", "-C", str(data_dir), "pull", "--ff-only", "--quiet"])
     results_dir.mkdir(parents=True, exist_ok=True)
+    if args.dry_run:
+        log("DRY RUN: results will be printed, not written/committed/pushed")
 
     def have_result(sha):
         return (results_dir / f"{sha}.json").exists()
