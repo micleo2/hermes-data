@@ -25,6 +25,7 @@ Requires: gh (authenticated as a repo maintainer), git.
 
 import argparse
 import json
+import shlex
 import shutil
 import stat
 import subprocess
@@ -187,35 +188,32 @@ def benchmark_run(args, rundir, run_id, sha, bench_dir, results_dir, data_dir):
         exe.chmod(exe.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
     hbc = rundir / "index.android.hbc"
+    hermesc_cmd = [
+        str(hermesc),
+        "-O",
+        "-w",
+        "-emit-binary",
+        "-out",
+        str(hbc),
+        str(bench_dir / "index.android.bundle"),
+    ]
     log("  compiling benchmark bundle -> bytecode")
-    sh(
-        [
-            str(hermesc),
-            "-O",
-            "-w",
-            "-emit-binary",
-            "-out",
-            str(hbc),
-            str(bench_dir / "index.android.bundle"),
-        ]
-    )
+    log("    " + shlex.join(hermesc_cmd))
+    sh(hermesc_cmd)
 
+    synth_cmd = [
+        str(synth),
+        "-reps",
+        str(args.reps),
+        str(bench_dir / "synth_trace.json"),
+        str(hbc),
+    ]
     log(f"  running synth ({args.reps} reps)")
+    log("    " + shlex.join(synth_cmd))
     raw_path = rundir / "synth_raw_output.txt"
     err_path = rundir / "synth_stderr.txt"
     with open(raw_path, "w") as raw, open(err_path, "w") as err:
-        subprocess.run(
-            [
-                str(synth),
-                "-reps",
-                str(args.reps),
-                str(bench_dir / "synth_trace.json"),
-                str(hbc),
-            ],
-            stdout=raw,
-            stderr=err,
-            check=True,
-        )
+        subprocess.run(synth_cmd, stdout=raw, stderr=err, check=True)
 
     log("  extracting results")
     result = extract(raw_path.read_text(), sha, timestamp)
