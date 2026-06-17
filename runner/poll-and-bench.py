@@ -139,11 +139,8 @@ def list_runs(args):
     return runs
 
 
-def benchmark_run(args, workdir, run_id, sha, bench_dir, results_dir, data_dir):
-    """Benchmark one run. Returns True if a new result was committed."""
-    rundir = workdir / run_id
-    rundir.mkdir(parents=True, exist_ok=True)
-
+def benchmark_run(args, rundir, run_id, sha, bench_dir, results_dir, data_dir):
+    """Benchmark one run into rundir. Returns True if a result was committed."""
     log(f"Downloading artifact '{args.artifact}' from run {run_id} ({sha})")
     dl = sh(
         [
@@ -273,21 +270,23 @@ def main():
         return
 
     new_count = 0
-    with tempfile.TemporaryDirectory() as tmp:
-        workdir = Path(tmp)
-        for run in runs:
-            run_id = str(run["databaseId"])
-            sha = run["headSha"]
-            # Dedup by the run's commit; skip without downloading if published.
-            if have_result(sha):
-                continue
-            try:
+    for run in runs:
+        run_id = str(run["databaseId"])
+        sha = run["headSha"]
+        # Dedup by the run's commit; skip without downloading if published.
+        if have_result(sha):
+            continue
+        try:
+            # A fresh temp dir per run (under /tmp on the Pi) holds the
+            # downloaded binaries + compiled bytecode, and is removed as soon
+            # as the commit is recorded -- nothing accumulates across runs.
+            with tempfile.TemporaryDirectory(prefix="hermes-perf-") as tmp:
                 if benchmark_run(
-                    args, workdir, run_id, sha, bench_dir, results_dir, data_dir
+                    args, Path(tmp), run_id, sha, bench_dir, results_dir, data_dir
                 ):
                     new_count += 1
-            except Exception as e:  # noqa: BLE001 -- one bad run shouldn't abort
-                log(f"Run {run_id} skipped due to error: {e}")
+        except Exception as e:  # noqa: BLE001 -- one bad run shouldn't abort
+            log(f"Run {run_id} skipped due to error: {e}")
 
     log(f"Poll complete. Newly benchmarked: {new_count}")
 
