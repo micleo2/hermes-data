@@ -4,18 +4,19 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Pull model for Hermes perf tracking.
+"""One scrape -> benchmark -> publish pass for Hermes perf tracking.
 
 The Raspberry Pi 5 is not a GitHub Actions runner, so CI cannot push benchmark
-jobs to it. Instead this script (driven by a systemd timer; see setup-systemd.py)
-PULLS finished builds:
+jobs to it. Instead this script does a single pass and exits; a systemd timer
+(see setup-systemd.py) runs it periodically -- that timer is what "polls". Each
+pass:
 
   1. List recent successful runs of the perf-build workflow on the branch.
   2. For each commit not benchmarked yet (state derived from the data branch --
      no local state to corrupt), download the prebuilt synth + hermesc artifact.
   3. Compile the benchmark bundle to bytecode, replay the trace with synth.
-  4. Extract the timing JSON and commit it to the data branch, building up a
-     commit-per-measurement history.
+  4. Extract the timing JSON and publish it -- commit + push to the data branch,
+     building up a commit-per-measurement history.
 
 Configuration is via CLI flags (see --help) or their built-in defaults.
 
@@ -32,11 +33,9 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-# This script lives at <data-repo>/main/runner/poll-and-bench.py, so its
+# This script lives at <data-repo>/main/runner/scrape-bench-publish.py, so its
 # directory is on sys.path and the sibling extractor imports cleanly.
 from extract_synth_results import extract
-
-RUNNER_DIR = Path(__file__).resolve().parent
 
 
 def log(msg):
@@ -66,6 +65,12 @@ def parse_args():
         metavar="BENCH_DIR",
         help="directory holding index.android.bundle + synth_trace.json "
         "(e.g. ~/hermes-data/simple-rn-app)",
+    )
+    p.add_argument(
+        "output_dir",
+        metavar="OUTPUT_DIR",
+        help="data-branch worktree where results/<sha>.json are written and "
+        "committed (e.g. ~/hermes-data/data) -- required, no default",
     )
     p.add_argument(
         "--repo",
@@ -98,11 +103,6 @@ def parse_args():
         type=int,
         default=5,
         help="benchmark repetitions; synth reports the median (default: 5)",
-    )
-    p.add_argument(
-        "--data-dir",
-        default=str(RUNNER_DIR.parents[1] / "data"),
-        help="data branch worktree (default: sibling 'data' of main worktree)",
     )
     p.add_argument(
         "--results-subdir",
@@ -242,7 +242,7 @@ def benchmark_run(args, rundir, run_id, sha, bench_dir, results_dir, data_dir):
 
 def main():
     args = parse_args()
-    data_dir = Path(args.data_dir)
+    data_dir = Path(args.output_dir)
     bench_dir = Path(args.bench_dir)
     results_dir = data_dir / args.results_subdir
 

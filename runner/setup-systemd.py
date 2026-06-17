@@ -4,20 +4,21 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Set up the systemd --user timer that drives the Hermes perf poller.
+"""Set up the systemd --user timer that periodically runs scrape-bench-publish.py.
 
 Generates hermes-perf.service + hermes-perf.timer in ~/.config/systemd/user/,
-reloads systemd, and enables the timer. Safe to re-run -- e.g. to change the
-polling interval or the poller's flags.
+reloads systemd, and enables the timer. The timer is what polls; the script
+itself does one scrape -> benchmark -> publish pass and exits. Safe to re-run -- e.g. to
+change the interval or the script's flags.
 
-Anything after a `--` is passed through verbatim to poll-and-bench.py and baked
+Anything after a `--` is passed through verbatim to scrape-bench-publish.py and baked
 into the service's ExecStart:
 
     python3 setup-systemd.py                       # 15-min interval, enable now
     python3 setup-systemd.py --interval-min 30
     python3 setup-systemd.py --linger              # survive logout (headless Pi)
     python3 setup-systemd.py --write-only          # write unit files only
-    python3 setup-systemd.py -- --reps 10          # poller args after --
+    python3 setup-systemd.py -- --reps 10          # script args after --
 """
 
 import argparse
@@ -70,13 +71,13 @@ def run(cmd, check=True):
 
 
 def main():
-    # Split our own args from poller passthrough args (everything after `--`).
+    # Split our own args from script passthrough args (everything after `--`).
     argv = sys.argv[1:]
     if "--" in argv:
         sep = argv.index("--")
-        own_argv, poller_args = argv[:sep], argv[sep + 1 :]
+        own_argv, script_args = argv[:sep], argv[sep + 1 :]
     else:
-        own_argv, poller_args = argv, []
+        own_argv, script_args = argv, []
 
     ap = argparse.ArgumentParser(
         description=__doc__,
@@ -107,20 +108,27 @@ def main():
 
     # This script lives at <data-repo>/main/runner/setup-systemd.py.
     runner_dir = Path(__file__).resolve().parent
-    poller = runner_dir / "poll-and-bench.py"
-    if not poller.exists():
-        sys.exit(f"poller not found: {poller}")
+    script = runner_dir / "scrape-bench-publish.py"
+    if not script.exists():
+        sys.exit(f"scrape-bench-publish.py not found: {script}")
 
-    # The bench assets live in a sibling dir of the worktrees:
-    # ~/hermes-data/{main,data,simple-rn-app}. poll-and-bench.py takes it as a
-    # required positional operand.
+    # The worktrees and assets are siblings under one parent:
+    # ~/hermes-data/{main,data,simple-rn-app}. scrape-bench-publish.py takes the
+    # bench-assets dir and the output (data) dir as required positional operands.
     bench_dir = runner_dir.parents[1] / "simple-rn-app"
+    output_dir = runner_dir.parents[1] / "data"
 
-    # Invoke the poller through this same Python; the operand comes first, then
-    # any passthrough flags after the `--`.
+    # Invoke the script through this same Python; the two operands come first,
+    # then any passthrough flags after the `--`.
     exec_start = " ".join(
         shlex.quote(part)
-        for part in [sys.executable, str(poller), str(bench_dir), *poller_args]
+        for part in [
+            sys.executable,
+            str(script),
+            str(bench_dir),
+            str(output_dir),
+            *script_args,
+        ]
     )
 
     unit_dir = Path.home() / ".config" / "systemd" / "user"

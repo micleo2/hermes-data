@@ -31,7 +31,7 @@ LICENSE          MIT
 README.md        this file
 .gitignore
 runner/
-  poll-and-bench.py        the poller (entry point)
+  scrape-bench-publish.py  one scrape->benchmark->publish pass (entry point)
   extract_synth_results.py synth stdout (JSON) -> result schema
   setup-systemd.py         generates + enables the systemd user timer
 ```
@@ -62,9 +62,9 @@ the (untracked) benchmark assets dir:
 ## State / dedup
 
 There is **no local state**. A commit counts as "done" iff
-`results/<sha>.json` exists on the `data` branch. The poller pulls the data
-worktree at the start of every run, so reimaging the Pi's SD card or running on a
-second machine just works -- already-published commits are skipped.
+`results/<sha>.json` exists on the `data` branch. `scrape-bench-publish.py` pulls the
+data worktree at the start of every run, so reimaging the Pi's SD card or running
+on a second machine just works -- already-published commits are skipped.
 
 ## One-time setup on the Pi
 
@@ -88,7 +88,8 @@ second machine just works -- already-published commits are skipped.
    ```
    `~/hermes-data/main` holds the `.git` object store -- don't delete it.
    The defaults (`facebook/hermes`, `static_h`, 5 reps) need no config; to
-   override, pass poller flags via the setup script in step 4 (e.g. `-- --reps 10`).
+   override, pass `scrape-bench-publish.py` flags via the setup script in step 4
+   (e.g. `-- --reps 10`).
 
 3. **Download the benchmark assets** from the release into the sibling
    `simple-rn-app/` dir (the repo is private, so this uses the Pi's `gh` auth):
@@ -101,16 +102,17 @@ second machine just works -- already-published commits are skipped.
    across trace versions).
 
 4. **Install and enable the systemd timer** with the setup script (generates the
-   `.service` + `.timer`, reloads, and enables). It passes `~/hermes-data/simple-rn-app`
-   to the poller as the required bench-dir operand. `--linger` keeps it running
-   when nobody is logged in (headless Pi):
+   `.service` + `.timer`, reloads, and enables). It passes the two required
+   operands to `scrape-bench-publish.py`: the bench-assets dir
+   (`~/hermes-data/simple-rn-app`) and the output dir (`~/hermes-data/data`).
+   `--linger` keeps it running when nobody is logged in (headless Pi):
    ```bash
    python3 ~/hermes-data/main/runner/setup-systemd.py --linger
    # custom cadence: python3 .../setup-systemd.py --interval-min 30 --linger
-   # poller flags go after --: python3 .../setup-systemd.py --linger -- --reps 10
+   # script flags go after --: python3 .../setup-systemd.py --linger -- --reps 10
    ```
    Default poll interval is 15 minutes. Re-run any time to change the interval
-   or the poller flags.
+   or the script flags.
 
 ## Operating
 
