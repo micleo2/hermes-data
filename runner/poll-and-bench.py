@@ -62,6 +62,12 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
+        "bench_dir",
+        metavar="BENCH_DIR",
+        help="directory holding index.android.bundle + synth_trace.json "
+        "(e.g. ~/hermes-data/simple-rn-app)",
+    )
+    p.add_argument(
         "--repo",
         default="facebook/hermes",
         help="source repo running the build workflow (default: facebook/hermes)",
@@ -102,11 +108,6 @@ def parse_args():
         "--results-subdir",
         default="results",
         help="results subdir within the data worktree (default: results)",
-    )
-    p.add_argument(
-        "--bench-dir",
-        default=str(RUNNER_DIR / "synth-bench-simple"),
-        help="dir with index.android.bundle + synth_trace.json",
     )
     return p.parse_args()
 

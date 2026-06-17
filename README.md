@@ -34,10 +34,12 @@ runner/
   poll-and-bench.py        the poller (entry point)
   extract_synth_results.py synth stdout (JSON) -> result schema
   setup-systemd.py         generates + enables the systemd user timer
-  synth-bench-simple/      benchmark assets (committed):
-      index.android.bundle
-      synth_trace.json
 ```
+
+The benchmark assets (`index.android.bundle` + the ~474 MB `synth_trace.json`)
+are **not** in git -- the trace is far over GitHub's 100 MB file limit. They ship
+as assets of the `bench-assets-v1` GitHub Release and live in a sibling dir on
+the Pi (see below).
 
 `data` branch (orphan):
 
@@ -46,12 +48,15 @@ results/
   <sha>.json     one per benchmarked commit
 ```
 
-On the Pi these are two sibling worktrees under one parent, backed by one clone:
+On the Pi, the two branches are sibling worktrees under one parent, alongside
+the (untracked) benchmark assets dir:
 
 ```
 ~/hermes-data/
-  main/    worktree of the main branch -- runner scripts + bench assets
-  data/    worktree of the data branch -- results/<sha>.json
+  main/           worktree of the main branch -- runner scripts
+  data/           worktree of the data branch -- results/<sha>.json
+  simple-rn-app/  benchmark assets (from the release) -- index.android.bundle,
+                  synth_trace.json
 ```
 
 ## State / dedup
@@ -71,28 +76,33 @@ second machine just works -- already-published commits are skipped.
    ```
 
 2. **Set up `main/` and `data/` as sibling worktrees** under `~/hermes-data`
-   (SSH so the headless Pi can push without a prompt). The bare-repo variant
-   keeps the two worktrees symmetric (neither holds the object store):
+   (SSH so the headless Pi can push without a prompt). Clone `main`, then add the
+   `data` branch as a sibling worktree:
    ```bash
-   mkdir ~/hermes-data && cd ~/hermes-data
-   git clone --bare git@github.com:<you>/hermes-data.git .bare
-   echo "gitdir: ./.bare" > .git
-   git worktree add main main      # main branch: runner scripts
-   git worktree add data data      # data branch: results
+   git clone git@github.com:<you>/hermes-data.git ~/hermes-data/main
+   git -C ~/hermes-data/main worktree add ../data data
 
    # identity for the result commits (or use your account's noreply email)
    git -C ~/hermes-data/data config user.name  "hermes-perf-pi"
    git -C ~/hermes-data/data config user.email "perf@localhost"
    ```
-   (Simpler alternative: `git clone … ~/hermes-data/main` then
-   `git -C ~/hermes-data/main worktree add ../data data` -- works the same, but
-   `main/` then holds the `.git` object store and must not be deleted.)
-   The bench assets and scripts come with the `main` worktree; the defaults
-   (`facebook/hermes`, `static_h`, 5 reps) need no config. To override, pass
-   flags to the poller via the setup script in step 3 (e.g. `-- --reps 10`).
+   `~/hermes-data/main` holds the `.git` object store -- don't delete it.
+   The defaults (`facebook/hermes`, `static_h`, 5 reps) need no config; to
+   override, pass poller flags via the setup script in step 4 (e.g. `-- --reps 10`).
 
-3. **Install and enable the systemd timer** with the setup script (generates the
-   `.service` + `.timer`, reloads, and enables). `--linger` keeps it running
+3. **Download the benchmark assets** from the release into the sibling
+   `simple-rn-app/` dir (the repo is private, so this uses the Pi's `gh` auth):
+   ```bash
+   mkdir -p ~/hermes-data/simple-rn-app
+   gh release download bench-assets-v1 --repo <you>/hermes-data \
+     --dir ~/hermes-data/simple-rn-app
+   ```
+   A new benchmark trace = a new `bench-assets-vN` tag (results aren't comparable
+   across trace versions).
+
+4. **Install and enable the systemd timer** with the setup script (generates the
+   `.service` + `.timer`, reloads, and enables). It passes `~/hermes-data/simple-rn-app`
+   to the poller as the required bench-dir operand. `--linger` keeps it running
    when nobody is logged in (headless Pi):
    ```bash
    python3 ~/hermes-data/main/runner/setup-systemd.py --linger

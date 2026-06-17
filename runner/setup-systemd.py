@@ -111,9 +111,16 @@ def main():
     if not poller.exists():
         sys.exit(f"poller not found: {poller}")
 
-    # Invoke the poller through this same Python; append any passthrough flags.
+    # The bench assets live in a sibling dir of the worktrees:
+    # ~/hermes-data/{main,data,simple-rn-app}. poll-and-bench.py takes it as a
+    # required positional operand.
+    bench_dir = runner_dir.parents[1] / "simple-rn-app"
+
+    # Invoke the poller through this same Python; the operand comes first, then
+    # any passthrough flags after the `--`.
     exec_start = " ".join(
-        shlex.quote(part) for part in [sys.executable, str(poller), *poller_args]
+        shlex.quote(part)
+        for part in [sys.executable, str(poller), str(bench_dir), *poller_args]
     )
 
     unit_dir = Path.home() / ".config" / "systemd" / "user"
