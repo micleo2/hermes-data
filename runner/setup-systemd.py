@@ -8,16 +8,22 @@
 
 Generates hermes-perf.service + hermes-perf.timer in ~/.config/systemd/user/,
 reloads systemd, and enables the timer. Safe to re-run -- e.g. to change the
-polling interval:
+polling interval or the poller's flags.
 
-    python3 setup-systemd.py                 # 15-minute interval, enable now
+Anything after a `--` is passed through verbatim to poll-and-bench.py and baked
+into the service's ExecStart:
+
+    python3 setup-systemd.py                       # 15-min interval, enable now
     python3 setup-systemd.py --interval-min 30
-    python3 setup-systemd.py --linger        # also survive logout (headless Pi)
-    python3 setup-systemd.py --write-only     # just write the unit files
+    python3 setup-systemd.py --linger              # survive logout (headless Pi)
+    python3 setup-systemd.py --write-only          # write unit files only
+    python3 setup-systemd.py -- --reps 10          # poller args after --
 """
 
 import argparse
 import os
+import pwd
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -34,8 +40,7 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart={poller}
-EnvironmentFile=-{env_file}
+ExecStart={exec_start}
 
 [Install]
 WantedBy=default.target
@@ -65,6 +70,14 @@ def run(cmd, check=True):
 
 
 def main():
+    # Split our own args from poller passthrough args (everything after `--`).
+    argv = sys.argv[1:]
+    if "--" in argv:
+        sep = argv.index("--")
+        own_argv, poller_args = argv[:sep], argv[sep + 1 :]
+    else:
+        own_argv, poller_args = argv, []
+
     ap = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -87,31 +100,31 @@ def main():
         action="store_true",
         help="write the unit files but skip daemon-reload/enable",
     )
-    args = ap.parse_args()
+    args = ap.parse_args(own_argv)
 
     if args.interval_min < 1:
         sys.exit("--interval-min must be >= 1")
 
     # This script lives at <data-repo>/main/runner/setup-systemd.py.
     runner_dir = Path(__file__).resolve().parent
-    poller = runner_dir / "poll-and-bench.sh"
-    # runner.env sits at the parent of both worktrees: ~/hermes-data/runner.env
-    env_file = runner_dir.parent.parent / "runner.env"
-
+    poller = runner_dir / "poll-and-bench.py"
     if not poller.exists():
         sys.exit(f"poller not found: {poller}")
-    poller.chmod(0o755)
+
+    # Invoke the poller through this same Python; append any passthrough flags.
+    exec_start = " ".join(
+        shlex.quote(part) for part in [sys.executable, str(poller), *poller_args]
+    )
 
     unit_dir = Path.home() / ".config" / "systemd" / "user"
     unit_dir.mkdir(parents=True, exist_ok=True)
 
-    (unit_dir / SERVICE_NAME).write_text(
-        SERVICE_TEMPLATE.format(poller=poller, env_file=env_file)
-    )
+    (unit_dir / SERVICE_NAME).write_text(SERVICE_TEMPLATE.format(exec_start=exec_start))
     (unit_dir / TIMER_NAME).write_text(
         TIMER_TEMPLATE.format(interval=args.interval_min, service=SERVICE_NAME)
     )
     print(f"Wrote {unit_dir / SERVICE_NAME}")
+    print(f"  ExecStart={exec_start}")
     print(f"Wrote {unit_dir / TIMER_NAME}  (every {args.interval_min} min)")
 
     if args.write_only:
@@ -122,7 +135,7 @@ def main():
     run(["systemctl", "--user", "enable", "--now", TIMER_NAME])
 
     if args.linger:
-        user = os.environ.get("USER") or os.environ.get("LOGNAME") or ""
+        user = pwd.getpwuid(os.getuid()).pw_name
         if run(["loginctl", "enable-linger", user], check=False).returncode != 0:
             print(
                 f"WARNING: 'loginctl enable-linger {user}' failed; "

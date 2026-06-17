@@ -7,9 +7,6 @@ __pycache__/
 # runner/synth-bench-simple/ are kept; their compiled output is not.
 *.hbc
 
-# Local runner overrides (SOURCE_REPO=, BRANCH=, REPS=, ...).
-runner.env
-
 # Editor / OS noise.
 *.swp
 .DS_Store

@@ -31,7 +31,7 @@ LICENSE          MIT
 README.md        this file
 .gitignore
 runner/
-  poll-and-bench.sh        the poller (entry point)
+  poll-and-bench.py        the poller (entry point)
   extract_synth_results.py synth stdout (JSON) -> result schema
   setup-systemd.py         generates + enables the systemd user timer
   synth-bench-simple/      benchmark assets (committed):
@@ -52,7 +52,6 @@ On the Pi these are two sibling worktrees under one parent, backed by one clone:
 ~/hermes-data/
   main/    worktree of the main branch -- runner scripts + bench assets
   data/    worktree of the data branch -- results/<sha>.json
-  runner.env   (optional) config, kept outside both worktrees
 ```
 
 ## State / dedup
@@ -84,14 +83,13 @@ second machine just works -- already-published commits are skipped.
    # identity for the result commits (or use your account's noreply email)
    git -C ~/hermes-data/data config user.name  "hermes-perf-pi"
    git -C ~/hermes-data/data config user.email "perf@localhost"
-   chmod +x ~/hermes-data/main/runner/poll-and-bench.sh
    ```
    (Simpler alternative: `git clone … ~/hermes-data/main` then
    `git -C ~/hermes-data/main worktree add ../data data` -- works the same, but
    `main/` then holds the `.git` object store and must not be deleted.)
    The bench assets and scripts come with the `main` worktree; the defaults
-   (`facebook/hermes`, `static_h`, 5 reps) need no config. To override, drop a
-   `~/hermes-data/runner.env` with `KEY=value` lines (e.g. `REPS=10`).
+   (`facebook/hermes`, `static_h`, 5 reps) need no config. To override, pass
+   flags to the poller via the setup script in step 3 (e.g. `-- --reps 10`).
 
 3. **Install and enable the systemd timer** with the setup script (generates the
    `.service` + `.timer`, reloads, and enables). `--linger` keeps it running
@@ -99,8 +97,10 @@ second machine just works -- already-published commits are skipped.
    ```bash
    python3 ~/hermes-data/main/runner/setup-systemd.py --linger
    # custom cadence: python3 .../setup-systemd.py --interval-min 30 --linger
+   # poller flags go after --: python3 .../setup-systemd.py --linger -- --reps 10
    ```
-   Default poll interval is 15 minutes. Re-run any time to change it.
+   Default poll interval is 15 minutes. Re-run any time to change the interval
+   or the poller flags.
 
 ## Operating
 

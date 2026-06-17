@@ -37,22 +37,13 @@ def load_synth_json(text):
     return json.loads(text[start : end + 1])
 
 
-def main():
-    if len(sys.argv) != 4:
-        sys.stderr.write(
-            "usage: extract_synth_results.py <raw_output> <sha> <timestamp>\n"
-        )
-        return 2
-
-    raw_path, sha, timestamp = sys.argv[1], sys.argv[2], sys.argv[3]
-
-    with open(raw_path, "r") as f:
-        stats = load_synth_json(f.read())
-
+def extract(raw_text, sha, timestamp):
+    """Build the flat result dict from synth's raw stdout text."""
+    stats = load_synth_json(raw_text)
     general = stats.get("general", {})
     heap_info = stats.get("heapInfo", {})
 
-    result = {
+    return {
         "sha": sha,
         "timestamp": timestamp,
         # Primary metric: wall-clock seconds for the median rep.
@@ -69,6 +60,18 @@ def main():
         # Keep any perfEvent_* counters Linux perf inserted into "general".
         "perfEvents": {k: v for k, v in general.items() if k.startswith("perfEvent_")},
     }
+
+
+def main():
+    if len(sys.argv) != 4:
+        sys.stderr.write(
+            "usage: extract_synth_results.py <raw_output> <sha> <timestamp>\n"
+        )
+        return 2
+
+    raw_path, sha, timestamp = sys.argv[1], sys.argv[2], sys.argv[3]
+    with open(raw_path, "r") as f:
+        result = extract(f.read(), sha, timestamp)
 
     json.dump(result, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
