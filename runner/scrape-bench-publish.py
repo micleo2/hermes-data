@@ -94,10 +94,11 @@ def parse_args():
         help="artifact name to download (default: hermes-bin)",
     )
     p.add_argument(
-        "--max-runs",
+        "--max-workflow-runs",
         type=int,
         default=30,
-        help="how many recent successful runs to consider (default: 30)",
+        help="how many of the most recent successful workflow runs to consider "
+        "per pass (default: 30)",
     )
     p.add_argument(
         "--reps",
@@ -135,7 +136,7 @@ def list_runs(args):
             "--status",
             "success",
             "--limit",
-            str(args.max_runs),
+            str(args.max_workflow_runs),
             "--json",
             "databaseId,headSha",
         ],
@@ -301,7 +302,7 @@ def main():
 
     log(
         f"Listing successful '{args.workflow}' runs on '{args.branch}' "
-        f"(limit {args.max_runs})"
+        f"(limit {args.max_workflow_runs})"
     )
     runs = list_runs(args)
     if not runs:
