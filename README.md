@@ -102,17 +102,18 @@ on a second machine just works -- already-published commits are skipped.
    across trace versions).
 
 4. **Install and enable the systemd timer** with the setup script (generates the
-   `.service` + `.timer`, reloads, and enables). It passes the two required
-   operands to `scrape-bench-publish.py`: the bench-assets dir
-   (`~/hermes-data/simple-rn-app`) and the output dir (`~/hermes-data/data`).
-   `--linger` keeps it running when nobody is logged in (headless Pi):
+   `.service` + `.timer`, reloads, enables, and runs `loginctl enable-linger` so
+   the timer fires on a headless Pi with no active login). It passes the two
+   required operands to `scrape-bench-publish.py`: the bench-assets dir
+   (`~/hermes-data/simple-rn-app`) and the output dir (`~/hermes-data/data`):
    ```bash
-   python3 ~/hermes-data/main/runner/setup-systemd.py --linger
-   # custom cadence: python3 .../setup-systemd.py --interval-min 30 --linger
-   # script flags go after --: python3 .../setup-systemd.py --linger -- --reps 10
+   python3 ~/hermes-data/main/runner/setup-systemd.py
+   # custom cadence: python3 .../setup-systemd.py --interval-min 30
+   # script flags go after --: python3 .../setup-systemd.py -- --reps 10
    ```
    Default poll interval is 15 minutes. Re-run any time to change the interval
-   or the script flags.
+   or the script flags. (If `enable-linger` needs root, the script prints the
+   `sudo loginctl enable-linger` command to run.)
 
 ## Testing without systemd
 

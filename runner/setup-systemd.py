@@ -11,12 +11,15 @@ reloads systemd, and enables the timer. The timer is what polls; the script
 itself does one scrape -> benchmark -> publish pass and exits. Safe to re-run -- e.g. to
 change the interval or the script's flags.
 
+Lingering is enabled by default (loginctl enable-linger) so the timer runs on a
+headless Pi with no active login session -- the whole point of this deployment.
+
 Anything after a `--` is passed through verbatim to scrape-bench-publish.py and baked
 into the service's ExecStart:
 
     python3 setup-systemd.py                       # 15-min interval, enable now
     python3 setup-systemd.py --interval-min 30
-    python3 setup-systemd.py --linger              # survive logout (headless Pi)
+    python3 setup-systemd.py --no-linger           # skip enable-linger (testing)
     python3 setup-systemd.py --write-only          # write unit files only
     python3 setup-systemd.py -- --reps 10          # script args after --
 """
@@ -91,10 +94,10 @@ def main():
         help="minutes between polls (default: 15)",
     )
     ap.add_argument(
-        "--linger",
+        "--no-linger",
         action="store_true",
-        help="run 'loginctl enable-linger' so the timer fires without an "
-        "active login session (needed on a headless Pi)",
+        help="skip 'loginctl enable-linger'; by default linger is enabled so the "
+        "timer fires on a headless Pi with no active login session",
     )
     ap.add_argument(
         "--write-only",
@@ -149,12 +152,13 @@ def main():
     run(["systemctl", "--user", "daemon-reload"])
     run(["systemctl", "--user", "enable", "--now", TIMER_NAME])
 
-    if args.linger:
+    if not args.no_linger:
         user = pwd.getpwuid(os.getuid()).pw_name
         if run(["loginctl", "enable-linger", user], check=False).returncode != 0:
             print(
-                f"WARNING: 'loginctl enable-linger {user}' failed; "
-                f"re-run with: sudo loginctl enable-linger {user}"
+                f"WARNING: 'loginctl enable-linger {user}' failed; the timer "
+                f"won't run while logged out. Re-run with: "
+                f"sudo loginctl enable-linger {user}"
             )
 
     run(["systemctl", "--user", "list-timers", TIMER_NAME], check=False)
