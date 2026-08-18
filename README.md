@@ -22,6 +22,26 @@ builds the release binaries on GitHub's ARM runners. The Pi polls for finished
 builds, downloads the artifact, benchmarks on bare metal, and commits the result
 here.
 
+## Dashboard
+
+**https://micleo2.github.io/hermes-data/**
+
+One panel per metric over time; hover for the exact value and commit, click to
+open that commit on GitHub. It is a single self-contained `index.html` at the
+root of the `data` branch -- the measurements, CSS and JS are inlined, so there
+is no CDN, no build step and no server.
+
+`runner/gen_report.py` regenerates it from `results/`, and
+`scrape-bench-publish.py` calls it at the end of any pass that published new
+results. GitHub Pages redeploys on every push to `data`, so the site follows the
+Pi with no CI of its own. Pass `--skip-site` for a results-only pass.
+
+Regenerating by hand (from the parent of the two worktrees):
+
+```bash
+python3 main/runner/gen_report.py     # -> data/index.html
+```
+
 ## Layout
 
 `main` branch:
@@ -33,6 +53,7 @@ README.md        this file
 runner/
   scrape-bench-publish.py  one scrape->benchmark->publish pass (entry point)
   extract_synth_results.py synth stdout (JSON) -> result schema
+  gen_report.py            results/ -> the index.html dashboard (stdlib only)
   setup-systemd.py         generates + enables the systemd user timer
 ```
 
@@ -46,6 +67,8 @@ the Pi (see below).
 ```
 results/
   <sha>.json     one per benchmarked commit
+index.html       the dashboard, served by GitHub Pages
+.nojekyll        serve index.html verbatim (skip Pages' default Jekyll build)
 ```
 
 On the Pi, the two branches are sibling worktrees under one parent, alongside

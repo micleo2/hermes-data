@@ -17,6 +17,8 @@ pass:
   3. Compile the benchmark bundle to bytecode, replay the trace with synth.
   4. Extract the timing JSON and publish it -- commit + push to the data branch,
      building up a commit-per-measurement history.
+  5. If anything was published, regenerate the GitHub Pages dashboard
+     (data branch root index.html) and push that too.
 
 Configuration is via CLI flags (see --help) or their built-in defaults.
 
@@ -110,6 +112,12 @@ def parse_args():
         "--results-subdir",
         default="results",
         help="results subdir within the data worktree (default: results)",
+    )
+    p.add_argument(
+        "--skip-site",
+        action="store_true",
+        help="don't regenerate/publish index.html (the Pages dashboard) after "
+        "publishing results",
     )
     p.add_argument(
         "--dry-run",
@@ -257,6 +265,47 @@ def benchmark_run(args, rundir, run_id, sha, bench_dir, results_dir, data_dir):
     return True
 
 
+def publish_site(data_dir, results_dir, new_count):
+    """Regenerate index.html (the GitHub Pages dashboard) and publish it.
+
+    The page is served from the root of the data branch, so writing it into this
+    worktree and pushing is all it takes -- Pages redeploys on every push. The
+    generator lives on the main branch and imports nothing outside the standard
+    library, so the Pi needs no extra packages.
+
+    Fully derived from results/, so a failure here is never fatal: the next pass
+    regenerates from scratch.
+    """
+    # Sibling of this script, like extract_synth_results.py.
+    gen = Path(__file__).resolve().parent / "gen_report.py"
+    if not gen.exists():
+        log(f"  site: generator not found at {gen}, skipping")
+        return
+
+    index = data_dir / "index.html"
+    log("Regenerating dashboard")
+    sh([sys.executable, str(gen), "--results-dir", str(results_dir), "--out", str(index)])
+
+    sh(["git", "-C", str(data_dir), "add", "index.html"])
+    # Nothing to commit when the results that changed don't move the page.
+    if sh(["git", "-C", str(data_dir), "diff", "--cached", "--quiet"], check=False).returncode == 0:
+        log("  site: unchanged")
+        return
+
+    plural = "s" if new_count != 1 else ""
+    sh(
+        [
+            "git", "-C", str(data_dir), "commit", "--quiet",
+            "-m", f"site: regenerate dashboard ({new_count} new result{plural})",
+        ]
+    )
+    if sh(["git", "-C", str(data_dir), "push", "--quiet"], check=False).returncode:
+        log("  push rejected, rebasing and retrying")
+        sh(["git", "-C", str(data_dir), "pull", "--rebase", "--quiet"])
+        sh(["git", "-C", str(data_dir), "push", "--quiet"])
+    log("  site: published")
+
+
 def main():
     args = parse_args()
     data_dir = Path(args.output_dir)
@@ -327,6 +376,15 @@ def main():
                     new_count += 1
         except Exception as e:  # noqa: BLE001 -- one bad run shouldn't abort
             log(f"Run {run_id} skipped due to error: {e}")
+
+    if new_count and not args.skip_site:
+        if args.dry_run:
+            log("DRY RUN: would regenerate and publish index.html")
+        else:
+            try:
+                publish_site(data_dir, results_dir, new_count)
+            except Exception as e:  # noqa: BLE001 -- the results are already published
+                log(f"Dashboard regeneration failed (results are safe): {e}")
 
     log(f"Poll complete. Newly benchmarked: {new_count}")
 
