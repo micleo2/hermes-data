@@ -45,16 +45,22 @@ METRICS = [
     ("peakAllocatedBytes", "Peak allocated", "MiB", MIB, 1),
     ("totalGCTime", "Total GC time", "s", 1, 3),
     ("maxGCPause", "Max GC pause", "ms", 1e-3, 1),
+    ("avgGCPause", "Avg GC pause", "ms", 1e-3, 2),
     ("numCollections", "GC collections", "", 1, 0),
     # Shown by the "All" toggle:
     ("totalGCCPUTime", "Total GC CPU time", "s", 1, 3),
     ("heapSize", "Heap size", "MiB", MIB, 0),
     ("finalHeapSize", "Final heap size", "MiB", MIB, 0),
+    ("externalBytes", "External memory", "MiB", MIB, 1),
     ("perfEvent_L1-dcache-load-misses", "L1 dcache load misses", "M", 1e6, 1),
     ("perfEvent_L1-icache-load-misses", "L1 icache load misses", "M", 1e6, 1),
     ("perfEvent_major-faults", "Major faults", "", 1, 0),
 ]
-HEADLINE_COUNT = 9
+HEADLINE_COUNT = 10
+
+# A metric can be absent from a result: it may predate the engine emitting it
+# (externalBytes) or the runner extracting it (avgGCPause). Those points are
+# null in the embedded data and the page draws a gap rather than a zero.
 
 
 def load_runs(results_dir: pathlib.Path) -> list[dict]:
@@ -213,10 +219,15 @@ function activeMetrics() {
 }
 
 function buildPanel(metric, idx) {
-  const vals = idx.map((i) => DATA.values[metric.key][i] / metric.scale);
+  const raw = DATA.values[metric.key];
+  // null = not reported for that commit. Keep the slot so every panel shares
+  // one index space (the crosshair steps all panels by the same k).
+  const vals = idx.map((i) => (raw[i] == null ? null : raw[i] / metric.scale));
   const times = idx.map((i) => DATA.commits[i].t);
-  const med = median(vals);
-  const lo = Math.min(...vals), hi = Math.max(...vals);
+  const known = vals.filter((v) => v !== null);
+  if (!known.length) return null;  // never reported in this range -> no panel
+  const med = median(known);
+  const lo = Math.min(...known), hi = Math.max(...known);
   const pad = (hi - lo) * 0.18 || Math.abs(hi || 1) * 0.02;
   const y0 = lo - pad, y1 = hi + pad;
   const t0 = Math.min(...times), t1 = Math.max(...times);
@@ -248,12 +259,29 @@ function buildPanel(metric, idx) {
     lab.textContent = new Date(t * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
 
-  el("path", { class: "series", d: vals.map((v, k) => (k ? "L" : "M") + X(times[k]) + " " + Y(v)).join(" ") }, svg);
-  el("circle", { class: "endpoint", cx: X(times[times.length - 1]), cy: Y(vals[vals.length - 1]), r: 4 }, svg);
+  // Break the line at gaps rather than interpolating across missing commits.
+  const seg = [];
+  let pen = false;
+  vals.forEach((v, k) => {
+    if (v === null) { pen = false; return; }
+    seg.push((pen ? "L" : "M") + X(times[k]) + " " + Y(v));
+    pen = true;
+  });
+  el("path", { class: "series", d: seg.join(" ") }, svg);
+
+  const lastK = vals.reduce((acc, v, k) => (v === null ? acc : k), -1);
+  // A lone point between two gaps has no line to sit on, and a one-point path
+  // draws nothing -- give it a dot so sparse metrics are visible.
+  vals.forEach((v, k) => {
+    if (v === null || k === lastK) return;
+    const alone = (k === 0 || vals[k - 1] === null) && vals[k + 1] === null;
+    if (alone) el("circle", { class: "endpoint", cx: X(times[k]), cy: Y(v), r: 3 }, svg);
+  });
+  el("circle", { class: "endpoint", cx: X(times[lastK]), cy: Y(vals[lastK]), r: 4 }, svg);
   const endLab = el("text", {
-    class: "endlabel", x: X(times[times.length - 1]) + 7, y: Y(vals[vals.length - 1]) - 7,
+    class: "endlabel", x: X(times[lastK]) + 7, y: Y(vals[lastK]) - 7,
   }, svg);
-  endLab.textContent = fmt(vals[vals.length - 1], dec);
+  endLab.textContent = fmt(vals[lastK], dec);
 
   const cross = el("line", { class: "crosshair", y1: PADT, y2: PADT + PH, visibility: "hidden" }, svg);
   const cursor = el("circle", { class: "cursor", r: 5, visibility: "hidden" }, svg);
@@ -313,15 +341,24 @@ function setHover(active, k, clientX, clientY) {
     const x = p.X(p.times[k]);
     p.cross.setAttribute("x1", x); p.cross.setAttribute("x2", x);
     p.cross.setAttribute("visibility", "visible");
-    p.cursor.setAttribute("cx", x); p.cursor.setAttribute("cy", p.Y(p.vals[k]));
-    p.cursor.setAttribute("visibility", "visible");
+    // No dot where the metric wasn't reported; the crosshair still lines up.
+    if (p.vals[k] === null) {
+      p.cursor.setAttribute("visibility", "hidden");
+    } else {
+      p.cursor.setAttribute("cx", x); p.cursor.setAttribute("cy", p.Y(p.vals[k]));
+      p.cursor.setAttribute("visibility", "visible");
+    }
   }
   const c = DATA.commits[active.idx[k]];
   const v = active.vals[k];
   const tip = $("#tip");
-  const prev = k > 0 ? active.vals[k - 1] : null;
+  // Compare against the most recent commit that actually reported the metric.
+  let prev = null;
+  for (let j = k - 1; j >= 0; j--) {
+    if (active.vals[j] !== null) { prev = active.vals[j]; break; }
+  }
   let delta = "first in range";
-  if (prev !== null) {
+  if (v !== null && prev !== null) {
     const d = v - prev;
     const pct = prev !== 0 ? (d / prev) * 100 : 0;
     delta = (d >= 0 ? "+" : "−") + fmt(Math.abs(d), active.dec) +
@@ -330,8 +367,10 @@ function setHover(active, k, clientX, clientY) {
   tip.replaceChildren();
   const mk = (cls, text) => { const n = document.createElement("div"); n.className = cls; n.textContent = text; return n; };
   const unit = active.metric.unit ? " " + active.metric.unit : "";
-  tip.appendChild(mk("v", fmt(v, active.dec) + unit));
-  tip.appendChild(mk("m", active.metric.title));
+  tip.appendChild(mk("v", v === null ? "—" : fmt(v, active.dec) + unit));
+  tip.appendChild(mk("m", v === null
+    ? active.metric.title + " · not reported for this commit"
+    : active.metric.title));
   const row = (label, value, mono) => {
     const r = document.createElement("div"); r.className = "r";
     const a = document.createElement("span"); a.textContent = label;
@@ -347,7 +386,8 @@ function setHover(active, k, clientX, clientY) {
   const r = tip.getBoundingClientRect();
   tip.style.left = Math.min(clientX + 16, window.innerWidth - r.width - 10) + "px";
   tip.style.top = Math.max(8, Math.min(clientY + 16, window.innerHeight - r.height - 10)) + "px";
-  $("#live").textContent = active.metric.title + " " + fmt(v, active.dec) + unit + ", commit " + c.sha.slice(0, 12);
+  $("#live").textContent = active.metric.title + " " +
+    (v === null ? "not reported" : fmt(v, active.dec) + unit) + ", commit " + c.sha.slice(0, 12);
 }
 
 function clearHover() {
@@ -374,7 +414,8 @@ function renderTable(idx, metrics) {
     const td1 = document.createElement("td"); td1.textContent = c.ts; tr.appendChild(td1);
     for (const m of metrics) {
       const td = document.createElement("td");
-      td.textContent = fmt(DATA.values[m.key][i] / m.scale, m.decimals);
+      const raw = DATA.values[m.key][i];
+      td.textContent = raw == null ? "—" : fmt(raw / m.scale, m.decimals);
       tr.appendChild(td);
     }
     t.appendChild(tr);
@@ -388,7 +429,8 @@ function render() {
   state.panels = [];
   state.hover = null;
   const grid = $("#grid");
-  grid.replaceChildren(...metrics.map((m) => buildPanel(m, idx)));
+  // buildPanel returns null for a metric with no data in this range.
+  grid.replaceChildren(...metrics.map((m) => buildPanel(m, idx)).filter(Boolean));
   renderTable(idx, metrics);
   $("#count").textContent = idx.length + " commits";
 }
@@ -493,7 +535,7 @@ def build_data(runs, url_template: str) -> dict:
             }
             for key, title, unit, scale, decimals in METRICS
         ],
-        "values": {m[0]: [r[m[0]] for r in runs] for m in METRICS},
+        "values": {m[0]: [r.get(m[0]) for r in runs] for m in METRICS},
     }
 
 

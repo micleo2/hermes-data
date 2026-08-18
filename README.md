@@ -180,13 +180,24 @@ One file per commit, `results/<sha>.json`:
   "totalGCCPUTime": 0.044,
   "numCollections": 12,
   "maxGCPause": 0.003,
+  "avgGCPause": 0.002,
   "finalHeapSize": "...",
   "peakAllocatedBytes": "...",
   "peakRSS": 12345678,
   "heapSize": 12345678,
+  "externalBytes": 12345678,
   "perfEvents": {}
 }
 ```
+
+A field is `null` when the engine build didn't report it, so the schema can grow
+without invalidating older results. Two current examples: `externalBytes` comes
+from Hermes [c20e6c3a][ext] (Aug 2026) and is null for anything built before it,
+and `avgGCPause` is null for results published before the runner started
+extracting it. Nothing is backfilled -- a metric simply starts partway along its
+line, and the dashboard draws a gap rather than a zero.
+
+[ext]: https://github.com/facebook/hermes/commit/c20e6c3aa9336329a2cb4b40ded03f6c8894272a
 
 `totalTime` (wall-clock seconds for the median rep) is the primary runtime
 metric. `synth` reports the median rep by `totalTime`, so a single value per

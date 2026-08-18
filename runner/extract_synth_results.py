@@ -53,10 +53,13 @@ def extract(raw_text, sha, timestamp):
         "totalGCCPUTime": general.get("totalGCCPUTime"),
         "numCollections": general.get("numCollections"),
         "maxGCPause": general.get("maxGCPause"),
+        "avgGCPause": general.get("avgGCPause"),
         "finalHeapSize": general.get("finalHeapSize"),
         "peakAllocatedBytes": general.get("peakAllocatedBytes"),
         "peakRSS": heap_info.get("Peak RSS"),
         "heapSize": heap_info.get("Heap size"),
+        # Added by Hermes c20e6c3a (Aug 2026); null on older engine builds.
+        "externalBytes": heap_info.get("External bytes"),
         # Keep any perfEvent_* counters Linux perf inserted into "general".
         "perfEvents": {k: v for k, v in general.items() if k.startswith("perfEvent_")},
     }
