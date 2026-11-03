@@ -1,0 +1,23 @@
+{
+  "avgGCPause": 0.002347745784810127,
+  "externalBytes": 52542,
+  "finalHeapSize": 33554432,
+  "heapSize": 33554432,
+  "maxGCPause": 0.008258718,
+  "numCollections": 89,
+  "peakAllocatedBytes": 27848920,
+  "peakRSS": 890667008,
+  "perfEvents": {
+    "perfEvent_L1-dcache-load-misses": 73041958,
+    "perfEvent_L1-icache-load-misses": 24755435,
+    "perfEvent_cpu-cycles": 7341909708,
+    "perfEvent_instructions": 12439558270,
+    "perfEvent_major-faults": 0
+  },
+  "sha": "fbdd1377eafd99927f83549728d27b07f86ba549",
+  "timestamp": "2026-11-03T09:12:59Z",
+  "totalCPUTime": 3.072474999999999,
+  "totalGCCPUTime": 0.187376,
+  "totalGCTime": 0.18547191700000004,
+  "totalTime": 3.078191436
+}
